@@ -1,3 +1,5 @@
+%%writefile game-mpi.c
+
 /*
     Felipe Cassiano Naranjo             RA: 142489
     Pedro Tanajura Freire Meira Lima    RA: 140651
@@ -6,45 +8,53 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <omp.h>
 #include <sys/time.h>
 #include "mpi.h"
 
 #define SIZE 2048
 #define ITERATIONS 2000
 
-#define THREADS 8
-
 struct timeval startSum, endSum, start, end;
 
-void initializeGrid(bool **grid, int splitedSize);
-void freeGridMemory(bool **grid);
+void initializeGrid(bool **grid, int linesPerProcess);
+void freeGridMemory(bool **grid, int linesPerProcess);
 void createGlider(bool **grid);
 void createRPentonimo(bool **grid);
-int getNeighbors(bool **grid, int i, int j);
-void calculateNewGridState(bool **grid1, bool **grid2, int startIdx, int endIdx);
-int aliveCounter(bool **grid);
-void executeGame(bool **grid1, bool **grid2);
+int getNeighbors(bool **grid, int i, int j, int *bot_border, int *top_border, int linesPerProcess);
+void calculateNewGridState(bool **grid1, bool **grid2, int linesPerProcess);
+int aliveCounter(bool **grid, int linesPerProcess);
+void executeGame(bool **grid1, bool **grid2, int linesPerProcess);
 float convertTime(struct timeval start, struct timeval end);
-bool isInteger(float N);
+void print_grid(bool **grid, int linesPerProcess);
 
-void initializeGrid(bool **grid, int splitedSize)
+void print_grid(bool **grid, int linesPerProcess)
+{
+    int i, j;
+    
+    for(i = 0; i<linesPerProcess; i++){
+        for(j = 0; j<SIZE; j++)
+            printf("%d ", grid[i][j]);
+        printf("\n");
+    }
+}
+
+void initializeGrid(bool **grid, int linesPerProcess)
 {
     int i, j;
 
-    for (i = 0; i<SIZE; i++)
-        grid[i] = malloc(splitedSize * sizeof (bool)) ;
+    for (i = 0; i<linesPerProcess; i++)
+        grid[i] = malloc(SIZE * sizeof (bool)) ;
 
-    for (i = 0; i<SIZE; i++)
-        for (j = 0; j<splitedSize; j++)
+    for (i = 0; i<linesPerProcess; i++)
+        for (j = 0; j<SIZE; j++)
             grid[i][j] = 0;
 }
 
-void freeGridMemory(bool **grid)
+void freeGridMemory(bool **grid, int linesPerProcess)
 {
     int i;
 
-    for (i = 0; i<SIZE; i++)
+    for (i = 0; i<linesPerProcess; i++)
         free(grid[i]);
     free(grid);
 }
@@ -71,9 +81,9 @@ void createRPentonimo(bool **grid)
     grid[lin+2][col+1] = 1;
 }
 
-int getNeighbors(bool **grid, int i, int j)
+int getNeighbors(bool **grid, int i, int j, int *bot_border, int *top_border, int linesPerProcess)
 {
-    if(i != 0 && j != 0 && i != SIZE-1 && j != SIZE-1)
+    if(i != 0 && j != 0 && i != linesPerProcess-1 && j != SIZE-1)
     {
         return  grid[i-1][j-1] +    //top left
                 grid[i-1][j] +      //top middle
@@ -85,26 +95,41 @@ int getNeighbors(bool **grid, int i, int j)
                 grid[i+1][j+1];     //bottom right
     }
 
-    return  grid[(i-1+SIZE)%SIZE][(j-1+SIZE)%SIZE] +    //top left
-            grid[(i-1+SIZE)%SIZE][j] +                  //top middle
-            grid[(i-1+SIZE)%SIZE][(j+1)%SIZE] +         //top right
-            grid[i][(j-1+SIZE)%SIZE] +                  //middle left
-            grid[i][(j+1)%SIZE] +                       //middle right
-            grid[(i+1)%SIZE][(j-1+SIZE)%SIZE] +         //bottom left
-            grid[(i+1)%SIZE][j] +                       //bottom middle
-            grid[(i+1)%SIZE][(j+1)%SIZE];               //bottom right
+    return  top_border[(j-1+SIZE)%SIZE] +           //top left
+            top_border[j] +                         //top middle
+            top_border[(j+1)%SIZE] +                //top right
+            grid[i][(j-1+SIZE)%SIZE] +              //middle left
+            grid[i][(j+1)%SIZE] +                   //middle right
+            bot_border[(j-1+SIZE)%SIZE] +           //bottom left
+            bot_border[j] +                         //bottom middle
+            bot_border[(j+1)%SIZE];                 //bottom right
 }
 
-void calculateNewGridState(bool **grid1, bool **grid2, int startIdx, int endIdx)
+void calculateNewGridState(bool **grid1, bool **grid2, int linesPerProcess)
 {
     int i, j;
     int neighbors;
+    int processId, noProcesses;
+    MPI_Status status;
+    int *top_border = malloc(SIZE * sizeof (bool));
+    int *bot_border = malloc(SIZE * sizeof (bool));
 
-    for(i = startIdx; i<endIdx; i++)
+    MPI_Comm_size(MPI_COMM_WORLD, &noProcesses); 
+    MPI_Comm_rank(MPI_COMM_WORLD, &processId); 
+
+    MPI_Sendrecv(grid1[0], SIZE, MPI_C_BOOL, ((processId-1+noProcesses)%noProcesses), 10,
+	            bot_border, SIZE,  MPI_C_BOOL, ((processId-1+noProcesses)%noProcesses), 10,
+	            MPI_COMM_WORLD, &status);
+
+    MPI_Sendrecv(grid1[linesPerProcess-1], SIZE, MPI_C_BOOL, ((processId+1)%noProcesses), 11,
+	            top_border, SIZE,  MPI_C_BOOL, ((processId+1)%noProcesses), 11,
+	            MPI_COMM_WORLD, &status);
+
+    for(i = 0; i<linesPerProcess; i++)
     {
         for(j = 0; j<SIZE; j++)
         {
-            neighbors = getNeighbors(grid1, i, j);
+            neighbors = getNeighbors(grid1, i, j, bot_border, top_border, linesPerProcess);
 
             if(grid1[i][j])
             {
@@ -129,64 +154,34 @@ void calculateNewGridState(bool **grid1, bool **grid2, int startIdx, int endIdx)
     }
 }
 
-int aliveCounter(bool **grid)
+int aliveCounter(bool **grid, int linesPerProcess)
 {
     int i, j, localSum = 0;
-
-    #pragma omp parallel for private(i, j) reduction(+:localSum)
-        for(i = 0; i<SIZE; i++)
-            for(j = 0; j<SIZE; j++)
-                localSum += grid[i][j];
+    
+    for(i = 0; i<linesPerProcess; i++)
+        for(j = 0; j<SIZE; j++)
+            localSum += grid[i][j];
     return localSum;
 }
 
-void executeGame(bool **grid1, bool **grid2)
+void executeGame(bool **grid1, bool **grid2, int linesPerProcess)
 {
-    int i, startIdx, endIdx;
+    int i;
     bool **aux;
-    int threadInterval = SIZE/THREADS;
 
-    #pragma omp parallel shared(threadInterval, grid1, grid2, aux) private(i, startIdx, endIdx)
+    for(i = 0; i<ITERATIONS; i++)
     {
-        startIdx = omp_get_thread_num() * threadInterval;
-        endIdx = startIdx + threadInterval;
-
-        for(i = 0; i<ITERATIONS; i++)
-        {
-            calculateNewGridState(grid1, grid2, startIdx, endIdx);
-            #pragma omp barrier
-
-            #pragma omp single
-            {
-                aux = grid1;
-                grid1 = grid2;
-                grid2 = aux;
-            }
-            #pragma omp barrier
-        }
+        calculateNewGridState(grid1, grid2, linesPerProcess);
+        aux = grid1;
+        grid1 = grid2;
+        grid2 = aux;
+        MPI_Barrier(MPI_COMM_WORLD);
     }
 }
 
 float convertTime(struct timeval start, struct timeval end)
 {
     return (end.tv_sec - start.tv_sec) + 1e-6*(end.tv_usec - start.tv_usec);
-}
-
-bool isInteger(float N)
-{
- 
-    // Convert float value
-    // of N to integer
-    int X = N;
- 
-    float aux = N - X;
- 
-    // If N is not equivalent
-    // to any integer
-    if (aux > 0) {
-        return false;
-    }
-    return true;
 }
 
 int main(int argc, char* argv[])
@@ -201,38 +196,31 @@ int main(int argc, char* argv[])
     int i, totalSumReduction, aux, totalRest, totalSum = 0;
     float rest, totalSumTimeReduction, totalTimeReduction, linesPerProcess;
 
-    grid1 = malloc(SIZE * sizeof (bool*));
     linesPerProcess = SIZE/noProcesses;
-    // Se a divisão está correta, divide igualmente
-    // Se não, divide igualmente em todas e adiciona o resto no primeiro processo
-    if(isInteger(linesPerProcess)){
-        initializeGrid(grid1, linesPerProcess);
-    } else{
-        aux = linesPerProcess;
-        rest = linesPerProcess - aux;
-        if(processId == 0){
-            totalRest = rest*noProcesses
-            initializeGrid(grid1, (aux + totalRest));
-        }else initializeGrid(grid1, aux);
-    }
-    createGlider(grid1);
-    createRPentonimo(grid1);
 
-    grid2 = malloc(SIZE * sizeof (bool*));
-    initializeGrid(grid2);
+    grid1 = malloc(linesPerProcess * sizeof (bool*));
+    initializeGrid(grid1, linesPerProcess);
+
+    grid2 = malloc(linesPerProcess * sizeof (bool*));
+    initializeGrid(grid2, linesPerProcess);
+    
+    if(processId == 0){
+        createGlider(grid1);
+        createRPentonimo(grid1);
+    }
 
     gettimeofday(&start, NULL);
-    executeGame(grid1, grid2);
+    executeGame(grid1, grid2, linesPerProcess);
     gettimeofday(&end, NULL);
 
     gettimeofday(&startSum, NULL);
-    totalSum = aliveCounter(grid1);
+    totalSum = aliveCounter(grid1, linesPerProcess);
     gettimeofday(&endSum, NULL);
 
     float totalTime = convertTime(start, end);;
     float totalSumTime = convertTime(startSum, endSum);
 
-    MPI_Reduce(&totalSum, &totalSumReduction, 1, MPI_FLOAT, MPI_SUM, 0,
+    MPI_Reduce(&totalSum, &totalSumReduction, 1, MPI_INT, MPI_SUM, 0,
                 MPI_COMM_WORLD);
     MPI_Reduce(&totalTime, &totalTimeReduction, 1, MPI_FLOAT, MPI_SUM, 0,
                 MPI_COMM_WORLD);
@@ -240,14 +228,14 @@ int main(int argc, char* argv[])
                 MPI_COMM_WORLD);
 
     if (processId == 0){
-        printf("Celulas vivas: %d\n", totalSum);
+        printf("Celulas vivas: %d\n", totalSumReduction);
         printf("Tempo de execucao das iteracoes: %.6fs\n", totalTimeReduction);
         printf("Tempo de execucao da soma: %.6fs\n", totalSumTimeReduction);
         printf("Tempo total: %.6fs\n", totalTimeReduction + totalSumTimeReduction);
     }
 
-    freeGridMemory(grid1);
-    freeGridMemory(grid2);
+    freeGridMemory(grid1, linesPerProcess);
+    freeGridMemory(grid2, linesPerProcess);
 
     MPI_Finalize();
     return 0;
