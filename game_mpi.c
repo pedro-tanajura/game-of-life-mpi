@@ -20,7 +20,7 @@ void initializeGrid(bool **grid, int linesPerProcess);
 void freeGridMemory(bool **grid, int linesPerProcess);
 void createGlider(bool **grid);
 void createRPentonimo(bool **grid);
-int getNeighbors(bool **grid, int i, int j, int *bot_border, int *top_border, int linesPerProcess);
+int getNeighbors(bool **grid, int i, int j, bool *bot_border, bool *top_border, int linesPerProcess);
 void calculateNewGridState(bool **grid1, bool **grid2, int linesPerProcess);
 int aliveCounter(bool **grid, int linesPerProcess);
 void executeGame(bool **grid1, bool **grid2, int linesPerProcess);
@@ -81,28 +81,49 @@ void createRPentonimo(bool **grid)
     grid[lin+2][col+1] = 1;
 }
 
-int getNeighbors(bool **grid, int i, int j, int *bot_border, int *top_border, int linesPerProcess)
+int getNeighbors(bool **grid, int i, int j, bool *bot_border, bool *top_border, int linesPerProcess)
 {
-    if(i != 0 && j != 0 && i != linesPerProcess-1 && j != SIZE-1)
+    if(i != 0 && j != 0 && i != linesPerProcess-1 && j != SIZE-1) // Pega parte interna do grid
     {
-        return  grid[i-1][j-1] +    //top left
-                grid[i-1][j] +      //top middle
-                grid[i-1][j+1] +    //top right
-                grid[i][j-1] +      //middle left
-                grid[i][j+1] +      //middle right
-                grid[i+1][j-1] +    //bottom left
-                grid[i+1][j] +      //bottom middle
-                grid[i+1][j+1];     //bottom right
+        return  grid[i-1][j-1] +                            //top left
+                grid[i-1][j] +                              //top middle
+                grid[i-1][j+1] +                            //top right
+                grid[i][j-1] +                              //middle left
+                grid[i][j+1] +                              //middle right
+                grid[i+1][j-1] +                            //bottom left
+                grid[i+1][j] +                              //bottom middle
+                grid[i+1][j+1];                             //bottom right
+    } 
+    int soma = 0;
+    if(i == 0){
+        return  top_border[(j-1+SIZE)%SIZE] +               //top left
+                top_border[j] +                             //top middle
+                top_border[(j+1)%SIZE] +                    //top right
+                grid[i][(j-1+SIZE)%SIZE] +                  //middle left
+                grid[i][(j+1)%SIZE] +                       //middle right
+                grid[i+1][j-1] +                            //bottom left
+                grid[i+1][j] +                              //bottom middle
+                grid[i+1][j+1];                             //bottom right
+    } if (i == linesPerProcess-1){
+        return  grid[i-1][j-1] +                            //top left
+                grid[i-1][j] +                              //top middle
+                grid[i-1][j+1] +                            //top right
+                grid[i][(j-1+SIZE)%SIZE] +                  //middle left
+                grid[i][(j+1)%SIZE] +                       //middle right
+                bot_border[(j-1+SIZE)%SIZE] +               //bottom left
+                bot_border[j] +                             //bottom middle
+                bot_border[(j+1)%SIZE];                     //bottom right
     }
 
-    return  top_border[(j-1+SIZE)%SIZE] +           //top left
-            top_border[j] +                         //top middle
-            top_border[(j+1)%SIZE] +                //top right
-            grid[i][(j-1+SIZE)%SIZE] +              //middle left
-            grid[i][(j+1)%SIZE] +                   //middle right
-            bot_border[(j-1+SIZE)%SIZE] +           //bottom left
-            bot_border[j] +                         //bottom middle
-            bot_border[(j+1)%SIZE];                 //bottom right
+        return  grid[i-1][j-1] +                            //top left
+                grid[i-1][j] +                              //top middle
+                grid[i-1][j+1] +                            //top right
+                grid[i][(j-1+SIZE)%SIZE] +                  //middle left
+                grid[i][(j+1)%SIZE] +                       //middle right
+                grid[i+1][j-1] +                            //bottom left
+                grid[i+1][j] +                              //bottom middle
+                grid[i+1][j+1];                             //bottom right
+
 }
 
 void calculateNewGridState(bool **grid1, bool **grid2, int linesPerProcess)
@@ -111,17 +132,17 @@ void calculateNewGridState(bool **grid1, bool **grid2, int linesPerProcess)
     int neighbors;
     int processId, noProcesses;
     MPI_Status status;
-    int *top_border = malloc(SIZE * sizeof (bool));
-    int *bot_border = malloc(SIZE * sizeof (bool));
+    bool *top_border = malloc(SIZE * sizeof (bool));
+    bool *bot_border = malloc(SIZE * sizeof (bool));
 
     MPI_Comm_size(MPI_COMM_WORLD, &noProcesses); 
     MPI_Comm_rank(MPI_COMM_WORLD, &processId); 
 
-    MPI_Sendrecv(grid1[0], SIZE, MPI_C_BOOL, ((processId-1+noProcesses)%noProcesses), 10,
+    MPI_Sendrecv(grid1[0], SIZE, MPI_C_BOOL, ((processId+1)%noProcesses), 10,
 	            bot_border, SIZE,  MPI_C_BOOL, ((processId-1+noProcesses)%noProcesses), 10,
 	            MPI_COMM_WORLD, &status);
 
-    MPI_Sendrecv(grid1[linesPerProcess-1], SIZE, MPI_C_BOOL, ((processId+1)%noProcesses), 11,
+    MPI_Sendrecv(grid1[linesPerProcess-1], SIZE, MPI_C_BOOL, ((processId-1+noProcesses)%noProcesses), 11,
 	            top_border, SIZE,  MPI_C_BOOL, ((processId+1)%noProcesses), 11,
 	            MPI_COMM_WORLD, &status);
 
@@ -171,6 +192,7 @@ void executeGame(bool **grid1, bool **grid2, int linesPerProcess)
 
     for(i = 0; i<ITERATIONS; i++)
     {
+        printf("%d\n", i);
         calculateNewGridState(grid1, grid2, linesPerProcess);
         aux = grid1;
         grid1 = grid2;
