@@ -1,5 +1,3 @@
-%%writefile game-mpi.c
-
 /*
     Felipe Cassiano Naranjo             RA: 142489
     Pedro Tanajura Freire Meira Lima    RA: 140651

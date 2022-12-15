@@ -1,0 +1,30 @@
+Computador: 
+	Ambiente: Ubuntu 22 emulado no Windows 10
+	Processador: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2,80GHz 2,80 GHz
+	RAM: 8,00 GB
+	Cores Físicos: 4
+	Cores Virtuais: 8
+
+1 PROCESSO
+    Celulas vivas: 51
+    Tempo de execucao das iteracoes: 105,961517s
+    Tempo de execucao da soma: 0,008767s
+    Tempo total: 105,970284s
+
+2 PROCESSOS
+    Celulas vivas: 51
+    Tempo de execucao das iteracoes: 134,019684s
+    Tempo de execucao da soma: 0,013902s        
+    Tempo total: 134,033585s
+
+4 PROCESSOS
+    Celulas vivas: 51
+    Tempo de execucao das iteracoes: 199,173859s
+    Tempo de execucao da soma: 0,011145s
+    Tempo total: 199,184998s
+
+8 PROCESSOS
+    Celulas vivas: 51
+    Tempo de execucao das iteracoes: 398,139160s
+    Tempo de execucao da soma: 0,017774s
+    Tempo total: 398,156921s
